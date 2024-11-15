@@ -11,10 +11,18 @@ typedef K::Point_2 Point_2;
 
 int main()
 {
-  std::istream_iterator< Point_2 >  input_begin( cin );
-  std::istream_iterator< Point_2 >  input_end;
-  std::ostream_iterator< Point_2 >  output( cout, "\n" );
-  CGAL::convex_hull_2( input_begin, input_end, output, K() );
+	/* cin points
+	12 0 0
+	33 1 1
+	22 0 1
+	123 1 0
+	32 0.5 0.2
+	12 0.1 0.2
+	*/
+	std::istream_iterator< Point_2 >  input_begin(cin);
+	std::istream_iterator< Point_2 >  input_end;
+	std::ostream_iterator< Point_2 >  output(cout, "\n");
+	CGAL::convex_hull_2(input_begin, input_end, output, K());
 
-  return 0;
+	return 0;
 }
