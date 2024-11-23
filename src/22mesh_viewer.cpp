@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <array>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/IO/polygon_mesh_io.h>
@@ -8,7 +9,8 @@
 #include <CGAL/Polygon_mesh_processing/interpolated_corrected_curvatures.h>
 #include <CGAL/Heat_method_3/Surface_mesh_geodesic_distances_3.h>
 #include <CGAL/Surface_mesh_shortest_path.h>
-
+#include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/point_generators_2.h>
 #include "portable-file-dialogs.h"
 #include "glm/glm.hpp"
 #include "polyscope/polyscope.h"
@@ -16,18 +18,27 @@
 #include "polyscope/point_cloud.h"
 #include "polyscope/curve_network.h"
 
-using std::vector; using std::string; using std::cout; using polyscope::guessNiceNameFromPath;
+using std::string; using std::vector; using::std::array; using std::cout;
+using polyscope::guessNiceNameFromPath;
 namespace PMP = CGAL::Polygon_mesh_processing;
-typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
-typedef Kernel::Point_3 Point3;
-typedef Kernel::FT Scalar;
-typedef Kernel::Vector_3 Vector3;
+namespace Heat = CGAL::Heat_method_3;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+typedef K::Point_2         Point2;
+typedef K::Iso_rectangle_2 Rectangle2;
+typedef K::Segment_2       Segment2;
+typedef K::Ray_2           Ray2;
+typedef K::Line_2          Line2;
+typedef K::Point_3         Point3;
+typedef K::FT              Scalar;
+typedef K::Vector_3        Vector3;
 typedef CGAL::Surface_mesh<Point3> Mesh;
-typedef Mesh::Vertex_index VertIds;
-typedef Mesh::Face_index FaceIds;
-typedef CGAL::Heat_method_3::Surface_mesh_geodesic_distances_3<Mesh, CGAL::Heat_method_3::Direct> HeatDistance;
-typedef CGAL::Surface_mesh_shortest_path_traits<Kernel, Mesh> Traits;
-typedef CGAL::Surface_mesh_shortest_path<Traits> ExactDistance;
+typedef Mesh::Vertex_index         VertIds;
+typedef Mesh::Face_index           FaceIds;
+typedef Heat::Surface_mesh_geodesic_distances_3<Mesh, Heat::Direct> HeatDistance;
+typedef CGAL::Surface_mesh_shortest_path_traits<K, Mesh> Traits;
+typedef CGAL::Surface_mesh_shortest_path<Traits>         ExactDistance;
+typedef CGAL::Delaunay_triangulation_2<K> DT2;
+typedef DT2::Finite_edges_iterator        DFEI;
 
 struct QuantityName
 {
@@ -50,13 +61,13 @@ void myMeshTools();
 
 int main(int argc, char* argv[]) {
 	// polyscope scene options config
-	polyscope::options::programName = "TIN Modeling";
+	polyscope::options::programName = "Mesh Processing";
 	polyscope::options::printPrefix = "[Log] ";
 	polyscope::options::usePrefsFile = false;
 	polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::ShadowOnly;
 	polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Free);
-	polyscope::view::upDir = polyscope::UpDir::ZUp;             // set +Z as up direction
-	polyscope::view::frontDir = polyscope::FrontDir::NegYFront; // set -Y as front direction
+	polyscope::view::upDir = polyscope::UpDir::YUp;             // set +Y as up direction
+	polyscope::view::frontDir = polyscope::FrontDir::ZFront; // set +z as front direction
 
 	// initialize polycope, creating opengl context and constructing a window
 	polyscope::init();
@@ -72,21 +83,31 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-bool MeshCGtoPS(Mesh smesh, vector<glm::vec3>& V, vector<vector<size_t>>& F)
+void GetCGALMesh(Mesh cmesh, vector<glm::vec3>& V, vector<vector<size_t>>& F)
 {
-	V = vector<glm::vec3>(smesh.number_of_vertices());
-	F = vector<vector<size_t>>(smesh.number_of_faces());
+	V = vector<glm::vec3>(cmesh.number_of_vertices());
+	F = vector<vector<size_t>>(cmesh.number_of_faces());
 	// get vertex position
-	for (VertIds vi : smesh.vertices()) {
-		Point3 pt = smesh.point(vi);
+	for (VertIds vi : cmesh.vertices()) {
+		Point3 pt = cmesh.point(vi);
 		V[vi.idx()] = glm::vec3(pt.x(), pt.y(), pt.z());
 	}
 	// get face vertex-list
-	for (FaceIds fi : smesh.faces()) {
-		for (VertIds vi : smesh.vertices_around_face(smesh.halfedge(fi)))
+	for (FaceIds fi : cmesh.faces()) {
+		for (VertIds vi : cmesh.vertices_around_face(cmesh.halfedge(fi)))
 			F[fi.idx()].emplace_back(vi.idx());
 	}
-	return true;
+}
+
+template <class LRS>
+void CropVoronoiEdge(LRS lrs, Rectangle2 bbox, vector<glm::vec2> & vdEdge)
+{
+	CGAL::Object cve = CGAL::intersection(lrs, bbox);
+	const Segment2* s = CGAL::object_cast<Segment2>(&cve);
+	if (s) {
+		vdEdge.emplace_back(s->point(0).x(), s->point(0).y());
+		vdEdge.emplace_back(s->point(1).x(), s->point(1).y());
+	}
 }
 
 void myMeshTools()
@@ -115,7 +136,7 @@ void myMeshTools()
 				pathLines.clear(); pickedVerts.clear(); pickedVIds.clear();
 			}
 			if (PMP::IO::read_polygon_mesh(meshFilePath, cgMesh)) {
-				MeshCGtoPS(cgMesh, meshV, meshF);
+				GetCGALMesh(cgMesh, meshV, meshF);
 				psMesh = polyscope::registerSurfaceMesh(guessNiceNameFromPath(meshFilePath), meshV, meshF);
 				polyscope::view::resetCameraToHomeView();
 			}
@@ -256,6 +277,47 @@ void myMeshTools()
 			else
 				polyscope::warning("Please select at least two mesh vertexes!");
 		}
+	}
+
+	//-Demo Menu-
+	ImGui::Separator();
+	ImGui::TextUnformatted("Demo");
+	if (ImGui::Button("Voronoi Daigram")) {
+		// generate random points in rectangle
+		vector<glm::vec2> vdSites;
+		Rectangle2 rt(-0.1, -0.1, 4.1, 4.1);
+		vector<Point2> points;
+		CGAL::Random_points_in_iso_rectangle_2<Point2> generator(Point2(0, 0), Point2(4, 4));
+		for (size_t i = 0; i < 50; ++i) {
+			vdSites.emplace_back(generator->x(), generator->y());
+			points.push_back(*generator++);
+		}
+		polyscope::registerPointCloud2D("Sites", vdSites);
+
+		DT2 dt2;
+		dt2.insert(points.begin(), points.end());
+		// draw triangulation
+		vector<glm::vec2> dtEdgePoints;
+		for (DFEI ei = dt2.finite_edges_begin(); ei != dt2.finite_edges_end(); ++ei) {
+			Segment2 e = dt2.segment(ei);
+			dtEdgePoints.push_back({ e.point(0).x(),e.point(0).y() });
+			dtEdgePoints.push_back({ e.point(1).x(),e.point(1).y() });
+		}
+		polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Planar);
+		polyscope::view::projectionMode = polyscope::ProjectionMode::Orthographic;
+		polyscope::registerCurveNetworkSegments2D("Delaunay2", dtEdgePoints);
+		polyscope::view::resetCameraToHomeView();
+		// draw voronoi
+		vector<glm::vec2> vdEdgePoints;
+		for (DFEI ei = dt2.finite_edges_begin(); ei != dt2.finite_edges_end(); ++ei) {
+			Line2 l; Ray2 r; Segment2 s;
+			CGAL::Object ve = dt2.dual(ei);
+			if (ve.assign(l)) CropVoronoiEdge(l, rt, vdEdgePoints);
+			else if (ve.assign(r)) CropVoronoiEdge(r, rt, vdEdgePoints);
+			else if (ve.assign(s)) CropVoronoiEdge(s, rt, vdEdgePoints);
+			else cout << "voronoi edge error";
+		}
+		polyscope::registerCurveNetworkSegments2D("Voronoi", vdEdgePoints);
 	}
 
 	// ImGui Config end
