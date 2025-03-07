@@ -61,7 +61,7 @@ void myMeshTools();
 
 int main(int argc, char* argv[]) {
 	// polyscope scene options config
-	polyscope::options::programName = "Mesh Processing";
+	polyscope::options::programName = "CGAL Mesh Processing";
 	polyscope::options::printPrefix = "[Log] ";
 	polyscope::options::usePrefsFile = false;
 	polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::ShadowOnly;
@@ -126,7 +126,7 @@ void myMeshTools()
 	static vector<glm::vec3> pathLines; // geodesic path lines
 	// Import Mesh File
 	if (ImGui::Button("Import Mesh")) {
-		vector<string> result = pfd::open_file("Open a Mesh File", "../data/",
+		vector<string> result = pfd::open_file("Open a Mesh File", ".",
 			{ "PLY Mesh(*.ply)", "*.ply", "OBJ Mesh(*.obj)", "*.obj", "All Files(*.*)", "*.*" }).result();
 		if (!result.empty()) {
 			meshFilePath = result[0];
@@ -300,8 +300,8 @@ void myMeshTools()
 		vector<glm::vec2> dtEdgePoints;
 		for (DFEI ei = dt2.finite_edges_begin(); ei != dt2.finite_edges_end(); ++ei) {
 			Segment2 e = dt2.segment(ei);
-			dtEdgePoints.push_back({ e.point(0).x(),e.point(0).y() });
-			dtEdgePoints.push_back({ e.point(1).x(),e.point(1).y() });
+			dtEdgePoints.emplace_back(e.point(0).x(), e.point(0).y());
+			dtEdgePoints.emplace_back(e.point(1).x(), e.point(1).y());
 		}
 		polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Planar);
 		polyscope::view::projectionMode = polyscope::ProjectionMode::Orthographic;
