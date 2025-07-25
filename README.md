@@ -1,2 +1,2 @@
 # CGAL-Examples
-CGAL Examples with polyscope
+CGAL example of visualization using Polyscope.
